@@ -18,6 +18,8 @@ class Server(object):
         self.global_loss=0.0
         data_map = distributer["data_map"]
         self.data_ratio = np.sum(data_map, axis=1) / np.sum(data_map)
+        self.select_type=args.select_type
+        self.select_ratio = args.select_ratio
 
     def init_process(self):
         setup_seed(2024)
@@ -28,24 +30,28 @@ class Server(object):
     def run(self):
         self.init_process()
         for r in range(self.rounds):
-            self.aggregation()
+            sampled_clients,data_ratio=self.selection()
+            self.brocast_info(sampled_clients)
+            self.aggregation(sampled_clients,data_ratio)
             test_loss, test_acc=self.test_model()
             print(test_loss,test_acc)
 
-    def aggregation(self):
+    def aggregation(self,sampled_clients,data_ratio):
         info=extra_info(self.global_loss)
         global_weight_vec, info_len = pack(self.model, info)
-        weights_vec_list=[torch.zeros_like(global_weight_vec) for _ in range(self.clients)]
-        for i in range(self.clients):
-            dist.recv(weights_vec_list[i], i)
+        weights_vec_list=[torch.zeros_like(global_weight_vec) for _ in range(len(sampled_clients))]
+        for i,c in enumerate(sampled_clients):
+            if c==1:
+                dist.recv(weights_vec_list[i], i)
 
         global_weight=torch.zeros_like(flatten_weights(extract_weights(self.model)))
         for i,weights_vec in enumerate(weights_vec_list):
             weights, info=unpack(weights_vec,len(info))
-            global_weight+=weights*self.data_ratio[i]
+            global_weight+=weights*data_ratio[i]
             # global_weight+=weights/self.clients
         load_weights(self.model, global_weight)
 
+        # brocast all device model
         global_weight_vec, info_len = pack(self.model, info)
         for i in range(self.clients):
             dist.send(global_weight_vec,i)
@@ -71,3 +77,19 @@ class Server(object):
         test_loss = test_loss / (batch_idx + 1)
         test_acc = 100. * correct / total
         return test_loss, test_acc
+
+    def selection(self):
+        if self.select_type=="random":
+            sampled_clients = np.zeros(self.clients, dtype=int)
+            selected_clients = np.random.choice(
+                range(0, self.clients - 1), int(self.clients*self.select_ratio), replace=False
+            )
+            selected_clients=sorted(selected_clients)
+            sampled_clients[selected_clients]=1
+            data_ratio = [ratio/np.sum(self.data_ratio[selected_clients]) for ratio in self.data_ratio]
+        return sampled_clients,data_ratio
+
+    def brocast_info(self,sampled_clients):
+        sampled_clients=torch.tensor(sampled_clients)
+        for i in range(self.clients):
+            dist.send(sampled_clients,i)

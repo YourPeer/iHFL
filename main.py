@@ -22,6 +22,8 @@ def get_args():
     # Training  parameters
     parser.add_argument('--batchsize', type=int, default=32)
     parser.add_argument('--learning_rate', type=float, default=0.01)
+    parser.add_argument('--select_type', type=str, default="random")
+    parser.add_argument('--select_ratio', type=float, default=0.5)
 
     args = parser.parse_args()
     return args

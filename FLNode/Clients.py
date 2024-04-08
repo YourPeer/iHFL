@@ -36,16 +36,20 @@ class Client(object):
     def run(self):
         self.init_process()
         for round in range(self.rounds):
-            self.local_train()
-            self.scheduler.step()
-            self.aggregation()
+            sampled_clients=self.get_info_from_server()
+            if sampled_clients[self.client_id]==1:
+                self.local_train()
+                self.scheduler.step()
+            self.aggregation(sampled_clients)
 
-    def aggregation(self, server_id=-1):
+
+    def aggregation(self, sampled_clients, server_id=-1):
         info=extra_info(self.train_loss)
         weights_vec, info_len=pack(self.model, info)
         if server_id==-1:
             server_id=self.clients
-        dist.send(weights_vec, server_id)
+        if sampled_clients[self.client_id] == 1:
+            dist.send(weights_vec, server_id)
         dist.recv(weights_vec, server_id)
         weights,info = unpack(weights_vec,info_len)
         load_weights(self.model,weights)
@@ -101,3 +105,8 @@ class Client(object):
         test_loss=test_loss / (batch_idx + 1)
         test_acc=100. * correct / total
         return test_loss,test_acc
+
+    def get_info_from_server(self):
+        sampled_clients = torch.zeros(self.clients, dtype=int)
+        dist.recv(sampled_clients,self.clients)
+        return sampled_clients
