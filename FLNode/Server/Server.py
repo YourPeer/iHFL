@@ -78,7 +78,7 @@ class Server(object):
         test_acc = 100. * correct / total
         return test_loss, test_acc
 
-    def selection(self):
+    def selection(self):11111
         if self.select_type=="random":
             sampled_clients = np.zeros(self.clients, dtype=int)
             selected_clients = np.random.choice(
