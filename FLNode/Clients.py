@@ -1,7 +1,7 @@
 import torch
 import torch.distributed as dist
 import os
-from .Comm_tools import *
+from .tools import *
 class Client(object):
     def __init__(self, client_id, args, distributer, model):
         # System parameters
@@ -37,7 +37,7 @@ class Client(object):
         self.init_process()
         for round in range(self.rounds):
             self.local_train()
-            # self.scheduler.step()
+            self.scheduler.step()
             self.aggregation()
 
     def aggregation(self, server_id=-1):

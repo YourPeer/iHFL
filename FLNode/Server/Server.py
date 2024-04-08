@@ -1,6 +1,6 @@
 import os
 import torch.distributed as dist
-from ..Comm_tools import *
+from ..tools import *
 import torch
 class Server(object):
     def __init__(self, args, distributer, model):
@@ -16,6 +16,8 @@ class Server(object):
 
         # Training parameters
         self.global_loss=0.0
+        data_map = distributer["data_map"]
+        self.data_ratio = np.sum(data_map, axis=1) / np.sum(data_map)
 
     def init_process(self):
         setup_seed(2024)
@@ -37,11 +39,11 @@ class Server(object):
         for i in range(self.clients):
             dist.recv(weights_vec_list[i], i)
 
-        global_weight=flatten_weights(extract_weights(self.model))
-        for weights_vec in weights_vec_list:
+        global_weight=torch.zeros_like(flatten_weights(extract_weights(self.model)))
+        for i,weights_vec in enumerate(weights_vec_list):
             weights, info=unpack(weights_vec,len(info))
-            global_weight+=weights
-        global_weight/=self.clients
+            global_weight+=weights*self.data_ratio[i]
+            # global_weight+=weights/self.clients
         load_weights(self.model, global_weight)
 
         global_weight_vec, info_len = pack(self.model, info)
