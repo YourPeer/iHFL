@@ -30,9 +30,9 @@ class Server(object):
     def run(self):
         self.init_process()
         for r in range(self.rounds):
-            sampled_clients,data_ratio=self.selection()
-            self.brocast_info(sampled_clients)
-            self.aggregation(sampled_clients,data_ratio)
+            sampled_clients, data_ratio = self.selection() # select device
+            self.borcast_model_and_info(sampled_clients) # borcast global model and info
+            self.aggregation(sampled_clients,data_ratio) # aggregation global model
             test_loss, test_acc=self.test_model()
             print(test_loss,test_acc)
 
@@ -50,11 +50,6 @@ class Server(object):
             global_weight+=weights*data_ratio[i]
             # global_weight+=weights/self.clients
         load_weights(self.model, global_weight)
-
-        # brocast all device model
-        global_weight_vec, info_len = pack(self.model, info)
-        for i in range(self.clients):
-            dist.send(global_weight_vec,i)
 
     def test_model(self):
         self.model.eval()
@@ -89,7 +84,15 @@ class Server(object):
             data_ratio = [ratio/np.sum(self.data_ratio[selected_clients]) for ratio in self.data_ratio]
         return sampled_clients,data_ratio
 
-    def brocast_info(self,sampled_clients):
+    def borcast_model_and_info(self,sampled_clients):
+        # borcast info
         sampled_clients=torch.tensor(sampled_clients)
         for i in range(self.clients):
             dist.send(sampled_clients,i)
+
+        # borcast globle model
+        info = extra_info(self.global_loss)
+        global_weight_vec, info_len = pack(self.model, info)
+        for i, c in enumerate(sampled_clients):
+            if c == 1: # be selected
+                dist.send(global_weight_vec, i)

@@ -36,23 +36,30 @@ class Client(object):
     def run(self):
         self.init_process()
         for round in range(self.rounds):
-            sampled_clients=self.get_info_from_server()
-            if sampled_clients[self.client_id]==1:
+            sampled_clients=self.download_info() # selected device
+            if sampled_clients[self.client_id]==1: # selected device perform training
+                self.download_global_model()
                 self.local_train()
                 self.scheduler.step()
-            self.aggregation(sampled_clients)
+                self.aggregation()
 
+    def download_global_model(self):
+        info = extra_info(self.train_loss)
+        weights_vec, info_len = pack(self.model, info)
+        dist.recv(weights_vec,self.clients)
+        weights, info = unpack(weights_vec, info_len)
+        load_weights(self.model, weights)
 
-    def aggregation(self, sampled_clients, server_id=-1):
+    def download_info(self):
+        sampled_clients = torch.zeros(self.clients, dtype=int)
+        dist.recv(sampled_clients,self.clients)
+        return sampled_clients
+
+    def aggregation(self):
         info=extra_info(self.train_loss)
         weights_vec, info_len=pack(self.model, info)
-        if server_id==-1:
-            server_id=self.clients
-        if sampled_clients[self.client_id] == 1:
-            dist.send(weights_vec, server_id)
-        dist.recv(weights_vec, server_id)
-        weights,info = unpack(weights_vec,info_len)
-        load_weights(self.model,weights)
+        dist.send(weights_vec, self.clients)
+
 
     def local_train(self):
         self.model.cuda()
@@ -71,6 +78,11 @@ class Client(object):
             self.optimizer.step()
         self.train_loss/=self.local_steps
         self.model.cpu()
+
+
+
+
+
 
     def get_batch_data(self):
         try:
@@ -106,7 +118,3 @@ class Client(object):
         test_acc=100. * correct / total
         return test_loss,test_acc
 
-    def get_info_from_server(self):
-        sampled_clients = torch.zeros(self.clients, dtype=int)
-        dist.recv(sampled_clients,self.clients)
-        return sampled_clients
