@@ -1,12 +1,15 @@
 import torch
 import torch.distributed as dist
+from FLNode.tools import *
 import os
-from .tools import *
+
 class Client(object):
     def __init__(self, client_id, args, distributer, model):
         # System parameters
+        self.size = args.size
         self.clients=args.clients
         self.client_id=client_id
+        self.server_id=self.clients
         self.gpu_num=args.gpu_num
         self.port=args.port
 
@@ -31,34 +34,34 @@ class Client(object):
         torch.cuda.set_device(self.client_id % self.gpu_num)
         os.environ['MASTER_ADDR'] = '127.0.0.1'
         os.environ['MASTER_PORT'] = str(self.port)
-        dist.init_process_group("gloo", rank=self.client_id, world_size=self.clients+1)
+        dist.init_process_group("gloo", rank=self.client_id, world_size=self.size)
 
     def run(self):
         self.init_process()
         for round in range(self.rounds):
-            sampled_clients=self.download_info() # selected device
+            sampled_clients=self.download_info(self.clients,self.server_id) # selected device
             if sampled_clients[self.client_id]==1: # selected device perform training
-                self.download_global_model()
+                self.download_global_model(self.server_id)
                 self.local_train()
                 self.scheduler.step()
                 self.aggregation()
 
-    def download_global_model(self):
+    def download_global_model(self,server_id):
         info = extra_info(self.train_loss)
         weights_vec, info_len = pack(self.model, info)
-        dist.recv(weights_vec,self.clients)
+        dist.recv(weights_vec,server_id)
         weights, info = unpack(weights_vec, info_len)
         load_weights(self.model, weights)
 
-    def download_info(self):
-        sampled_clients = torch.zeros(self.clients, dtype=int)
-        dist.recv(sampled_clients,self.clients)
+    def download_info(self,clients,server_id):
+        sampled_clients = torch.zeros(clients, dtype=int)
+        dist.recv(sampled_clients,server_id)
         return sampled_clients
 
     def aggregation(self):
         info=extra_info(self.train_loss)
         weights_vec, info_len=pack(self.model, info)
-        dist.send(weights_vec, self.clients)
+        dist.send(weights_vec, self.server_id)
 
 
     def local_train(self):

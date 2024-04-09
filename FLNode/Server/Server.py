@@ -5,6 +5,7 @@ import torch
 class Server(object):
     def __init__(self, args, distributer, model):
         # System parameters
+        self.size=args.size
         self.clients = args.clients
         self.gpu_num = args.gpu_num
         self.port = args.port
@@ -25,7 +26,7 @@ class Server(object):
         setup_seed(2024)
         os.environ['MASTER_ADDR'] = '127.0.0.1'
         os.environ['MASTER_PORT'] = str(self.port)
-        dist.init_process_group("gloo", rank=self.clients, world_size=self.clients+1)
+        dist.init_process_group("gloo", rank=self.size-1, world_size=self.size)
 
     def run(self):
         self.init_process()
