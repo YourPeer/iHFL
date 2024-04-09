@@ -3,8 +3,9 @@ import torch.distributed as dist
 from ..tools import *
 import torch
 class Server(object):
-    def __init__(self, args, distributer, model):
+    def __init__(self, c, args, distributer, model):
         # System parameters
+        self.server_id=c
         self.size=args.size
         self.clients = args.clients
         self.gpu_num = args.gpu_num
@@ -21,6 +22,12 @@ class Server(object):
         self.data_ratio = np.sum(data_map, axis=1) / np.sum(data_map)
         self.select_type=args.select_type
         self.select_ratio = args.select_ratio
+        self.train_loss_list = torch.zeros(self.clients)
+
+        # send extra info
+        self.T=0
+        self.info=extra_info(self.global_loss,self.server_id,self.T)
+
 
     def init_process(self):
         setup_seed(2024)
@@ -34,20 +41,22 @@ class Server(object):
             sampled_clients, data_ratio = self.selection() # select device
             self.borcast_model_and_info(sampled_clients) # borcast global model and info
             self.aggregation(sampled_clients,data_ratio) # aggregation global model
+            self.T+=1
             test_loss, test_acc=self.test_model()
+            print(self.train_loss_list)
             print(test_loss,test_acc)
 
     def aggregation(self,sampled_clients,data_ratio):
-        info=extra_info(self.global_loss)
-        global_weight_vec, info_len = pack(self.model, info)
+        global_weight_vec, info_len = pack(self.model, self.info)
         weights_vec_list=[torch.zeros_like(global_weight_vec) for _ in range(len(sampled_clients))]
         for i,c in enumerate(sampled_clients):
             if c==1:
                 dist.recv(weights_vec_list[i], i)
-
         global_weight=torch.zeros_like(flatten_weights(extract_weights(self.model)))
+
         for i,weights_vec in enumerate(weights_vec_list):
-            weights, info=unpack(weights_vec,len(info))
+            weights, info=unpack(weights_vec,len(self.info))
+            self.train_loss_list[i]=info[0].item() if info[0].item()!=0.0 else self.train_loss_list[i]
             global_weight+=weights*data_ratio[i]
             # global_weight+=weights/self.clients
         load_weights(self.model, global_weight)
@@ -92,8 +101,7 @@ class Server(object):
             dist.send(sampled_clients,i)
 
         # borcast globle model
-        info = extra_info(self.global_loss)
-        global_weight_vec, info_len = pack(self.model, info)
+        global_weight_vec, info_len = pack(self.model, self.info)
         for i, c in enumerate(sampled_clients):
             if c == 1: # be selected
                 dist.send(global_weight_vec, i)

@@ -1,13 +1,17 @@
 from .Server import Server
 import torch.distributed as dist
+import sys
 from FLNode.tools import *
 class Gateway(Server):
     def __init__(self, gateway_id, server_id, args, distributer, model):
-        super().__init__(args, distributer, model)
+        super().__init__(server_id,args, distributer, model)
         self.gateway_id = gateway_id
         self.server_id = server_id
         self.topology=args.topology
         self.clients_list = self.topology[self.gateway_id]
+        # send extra info
+        self.T = 0
+        self.info = extra_info(self.global_loss, self.gateway_id, self.T)
 
     def init_process(self):
         setup_seed(2024)
@@ -22,18 +26,21 @@ class Gateway(Server):
             sampled_clients, data_ratio = self.selection()  # select device
             self.borcast_model_and_info(sampled_clients)  # borcast global model and info
             gateway_weight=self.aggregation(sampled_clients, data_ratio)  # aggregation gateway model
-            self.aggregation_with_cloud(gateway_weight)# aggregation server model
+            self.info = extra_info(self.global_loss, self.gateway_id, self.T)
+            try:
+                self.aggregation_with_cloud(gateway_weight)# aggregation server model
+            except:
+                sys.exit()
+            self.T+=1
 
     def aggregation_with_cloud(self,gateway_weight):
         load_weights(self.model,gateway_weight)
-        info = extra_info(self.global_loss,self.gateway_id)
-        gateway_weight_vec, info_len = pack(self.model, info)
+        gateway_weight_vec, info_len = pack(self.model, self.info)
         dist.send(gateway_weight_vec, self.server_id)
         # warning: don't recv form server
 
     def aggregation(self,sampled_clients,data_ratio):
-        info=extra_info(self.global_loss)
-        global_weight_vec, info_len = pack(self.model, info)
+        global_weight_vec, info_len = pack(self.model, self.info)
         weights_vec_list=[torch.zeros_like(global_weight_vec) for _ in range(len(sampled_clients))]
         for i,(c,s) in enumerate(zip(self.clients_list,sampled_clients)):
             if s==1:
@@ -41,7 +48,7 @@ class Gateway(Server):
 
         gateway_weight=torch.zeros_like(flatten_weights(extract_weights(self.model)))
         for i,weights_vec in enumerate(weights_vec_list):
-            weights, info=unpack(weights_vec,len(info))
+            weights, info=unpack(weights_vec,info_len)
             gateway_weight+=weights*data_ratio[i]
             # global_weight+=weights/self.clients
         return gateway_weight
@@ -61,8 +68,7 @@ class Gateway(Server):
         return sampled_clients,data_ratio
 
     def download_global_model(self,server_id):
-        info = extra_info(self.global_loss,self.gateway_id)
-        weights_vec, info_len = pack(self.model, info)
+        weights_vec, info_len = pack(self.model, self.info)
         dist.recv(weights_vec, server_id)
         weights, info = unpack(weights_vec, info_len)
         load_weights(self.model, weights)
@@ -74,8 +80,7 @@ class Gateway(Server):
             dist.send(sampled_clients,i)
 
         # borcast edge model
-        info = extra_info(self.global_loss)
-        global_weight_vec, info_len = pack(self.model, info)
+        global_weight_vec, info_len = pack(self.model, self.info)
         for i, c in zip(self.clients_list,sampled_clients):
             if c == 1: # be selected
                 dist.send(global_weight_vec, i)

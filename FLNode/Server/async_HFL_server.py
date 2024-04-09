@@ -5,7 +5,8 @@ from FLNode.tools import *
 class async_HFL_server(sync_HFL_server):
     def __init__(self, c, args, distributer, model):
         super().__init__(c, args, distributer, model)
-        self.T=0
+        self.alpha=args.async_alpha
+        self.staleness_func=args.staleness_func
 
     def run(self):
         self.init_process()
@@ -15,18 +16,39 @@ class async_HFL_server(sync_HFL_server):
             lock.acquire()
             self.async_aggregation()  # aggregation global model
             test_loss, test_acc = self.test_model()
+            self.T+=1
             print(test_loss, test_acc)
             print("async agg")
             lock.release()
 
     def async_aggregation(self):
-        info = extra_info(self.global_loss,self.server_id)
-        global_weight_vec, info_len = pack(self.model, info)
+        global_weight_vec, info_len = pack(self.model, self.info)
         gateway_weight_vec=torch.zeros_like(global_weight_vec)
         dist.recv(gateway_weight_vec)
-        global_weights, info = unpack(global_weight_vec, len(info))
-        gateway_weights, (gateway_trainloss, gateway_id) = unpack(gateway_weight_vec, len(info))
-        global_weights=0.7*global_weights+0.3*gateway_weights
+        global_weights, _ = unpack(global_weight_vec, info_len)
+        gateway_weights, (gateway_trainloss, gateway_id, gateway_tao) = unpack(gateway_weight_vec, info_len)
+        global_weights=self.staleness_aggregation(global_weights,gateway_weights,gateway_tao)
         load_weights(self.model,global_weights)
-        global_weight_vec, info_len = pack(self.model, info)
+        global_weight_vec, info_len = pack(self.model, self.info)
         dist.send(global_weight_vec, gateway_id)
+
+    def staleness_aggregation(self, global_weights, gateway_weights,gateway_tao):
+        print(self.T, gateway_tao)
+        staleness=self.T-gateway_tao
+        alpha_t = self.alpha * self.staleness(staleness)
+        print(alpha_t)
+        global_weights = (1-alpha_t) * global_weights + alpha_t * gateway_weights
+        return global_weights
+
+    def staleness(self, staleness):
+        if self.staleness_func == "constant":
+            return 1
+        elif self.staleness_func == "poly":
+            a = 0.3
+            return pow(staleness+1, -a)
+        elif self.staleness_func == "hinge":
+            a, b = 10, 4
+            if staleness <= b:
+                return 1
+            else:
+                return 1 / (a * (staleness - b) + 1)

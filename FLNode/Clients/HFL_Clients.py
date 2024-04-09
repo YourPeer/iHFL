@@ -6,7 +6,6 @@ class HFL_Client(Client):
         super().__init__(client_id, args, distributer, model)
         self.topology=args.topology
         self.gateway_id=[k for k,v in self.topology.items() if self.client_id in v][0]
-
         self.clients_list=self.topology[self.gateway_id]
 
     def run(self):
@@ -17,9 +16,10 @@ class HFL_Client(Client):
                 self.download_global_model(self.gateway_id)
                 self.local_train()
                 self.scheduler.step()
+                self.info = extra_info(self.train_loss, self.client_id, self.T)
                 self.aggregation()
+            self.T+=1
 
     def aggregation(self):
-        info=extra_info(self.train_loss)
-        weights_vec, info_len=pack(self.model, info)
+        weights_vec, info_len=pack(self.model, self.info)
         dist.send(weights_vec, self.gateway_id)

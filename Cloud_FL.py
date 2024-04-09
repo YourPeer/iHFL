@@ -24,6 +24,7 @@ def get_args():
     parser.add_argument('--learning_rate', type=float, default=0.01)
     parser.add_argument('--select_type', type=str, default="random")
     parser.add_argument('--select_ratio', type=float, default=0.5)
+    parser.add_argument('--async_alpha', type=float, default=0.6)
 
     args = parser.parse_args()
     return args
@@ -38,7 +39,7 @@ if __name__=="__main__":
     for c in range(args.clients+1):
         if c == args.clients:
             # -------------------------start server--------------------------------
-            S = Server(args,distributer,model)
+            S = Server(c, args,distributer,model)
             p = mp.Process(target=S.run, args=())
         else:
             # -------------------------start client--------------------------------

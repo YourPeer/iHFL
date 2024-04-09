@@ -29,6 +29,10 @@ class Client(object):
         self.optimizer = torch.optim.SGD(self.model.parameters(),lr=self.lr,momentum=0.9)
         self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer,[int(self.rounds * 0.6), int(self.rounds * 0.9)],gamma=0.1)
 
+        # send extra info
+        self.T = 0
+        self.info = extra_info(self.train_loss, self.client_id, self.T)
+
     def init_process(self):
         setup_seed(2024)
         torch.cuda.set_device(self.client_id % self.gpu_num)
@@ -44,11 +48,12 @@ class Client(object):
                 self.download_global_model(self.server_id)
                 self.local_train()
                 self.scheduler.step()
+                self.info = extra_info(self.train_loss, self.client_id, self.T)
                 self.aggregation()
+            self.T+=1
 
     def download_global_model(self,server_id):
-        info = extra_info(self.train_loss)
-        weights_vec, info_len = pack(self.model, info)
+        weights_vec, info_len = pack(self.model, self.info)
         dist.recv(weights_vec,server_id)
         weights, info = unpack(weights_vec, info_len)
         load_weights(self.model, weights)
@@ -59,8 +64,7 @@ class Client(object):
         return sampled_clients
 
     def aggregation(self):
-        info=extra_info(self.train_loss)
-        weights_vec, info_len=pack(self.model, info)
+        weights_vec, info_len=pack(self.model, self.info)
         dist.send(weights_vec, self.server_id)
 
 
@@ -81,11 +85,6 @@ class Client(object):
             self.optimizer.step()
         self.train_loss/=self.local_steps
         self.model.cpu()
-
-
-
-
-
 
     def get_batch_data(self):
         try:
