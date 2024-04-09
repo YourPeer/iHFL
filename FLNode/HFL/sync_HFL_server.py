@@ -1,6 +1,6 @@
-from .Server import Server
+from ..Standard_FL.Server import Server
 import torch.distributed as dist
-from FLNode.tools import *
+from ..tools import *
 class sync_HFL_server(Server):
     def __init__(self, c, args, distributer, model):
         super().__init__(c,args, distributer, model)

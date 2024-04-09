@@ -18,6 +18,7 @@ def get_args():
     parser.add_argument('--partition_dir', type=float, default=0.6)
     parser.add_argument('--partition_shards', type=int, default=2)
     parser.add_argument('--rounds', type=int, default=5)
+    parser.add_argument('--gateway_rounds', type=int, default=3)
     parser.add_argument('--local_steps', type=int, default=100)
 
     # Training  parameters
@@ -47,7 +48,7 @@ if __name__=="__main__":
         # -------------------------start server--------------------------------
         if c == args.clients+args.gateways:
             print("server:%d start"%c)
-            S = sync_HFL_server(c, args,distributer,model)
+            S = async_HFL_server(c, args,distributer,model)
             p = mp.Process(target=S.run, args=())
         # -------------------------start gateways--------------------------------
         elif c in args.topology.keys():

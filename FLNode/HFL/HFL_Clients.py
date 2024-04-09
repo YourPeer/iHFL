@@ -1,6 +1,6 @@
-from .Clients import Client
+from ..Standard_FL.Clients import Client
 import torch.distributed as dist
-from FLNode.tools import *
+from ..tools import *
 class HFL_Client(Client):
     def __init__(self, client_id, args, distributer, model):
         super().__init__(client_id, args, distributer, model)
@@ -10,8 +10,11 @@ class HFL_Client(Client):
 
     def run(self):
         self.init_process()
-        for round in range(self.rounds):
-            sampled_clients=self.download_info(len(self.clients_list), self.gateway_id) # selected device
+        while 1:
+            try:
+                sampled_clients=self.download_info(len(self.clients_list), self.gateway_id) # selected device
+            except:
+                break
             if sampled_clients[self.topology[self.gateway_id].index(self.client_id)]==1: # selected device perform training
                 self.download_global_model(self.gateway_id)
                 self.local_train()

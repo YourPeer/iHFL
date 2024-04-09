@@ -1,6 +1,6 @@
 import torch
 import torch.distributed as dist
-from FLNode.tools import *
+from ..tools import *
 import os
 
 class Client(object):

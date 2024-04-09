@@ -18,7 +18,6 @@ class async_HFL_server(sync_HFL_server):
             test_loss, test_acc = self.test_model()
             self.T+=1
             print(test_loss, test_acc)
-            print("async agg")
             lock.release()
 
     def async_aggregation(self):
@@ -33,10 +32,8 @@ class async_HFL_server(sync_HFL_server):
         dist.send(global_weight_vec, gateway_id)
 
     def staleness_aggregation(self, global_weights, gateway_weights,gateway_tao):
-        print(self.T, gateway_tao)
         staleness=self.T-gateway_tao
         alpha_t = self.alpha * self.staleness(staleness)
-        print(alpha_t)
         global_weights = (1-alpha_t) * global_weights + alpha_t * gateway_weights
         return global_weights
 
