@@ -1,8 +1,8 @@
-from .sync_HFL_server import sync_HFL_server
+from ..HierFL import sync_HFL_server
 import multiprocessing as mp
 import torch.distributed as dist
-from FLNode.tools import *
-class async_HFL_server(sync_HFL_server):
+from Frameworks.tools import *
+class nebula_server(sync_HFL_server):
     def __init__(self, c, args, distributer, model):
         super().__init__(c, args, distributer, model)
         self.alpha=args.async_alpha
@@ -11,7 +11,7 @@ class async_HFL_server(sync_HFL_server):
     def run(self):
         self.init_process()
         lock = mp.Lock()
-        self.borcast_model(self.topology.keys())
+        # self.borcast_model(self.topology.keys())
         for r in range(self.rounds):
             lock.acquire()
             self.async_aggregation()  # aggregation global model

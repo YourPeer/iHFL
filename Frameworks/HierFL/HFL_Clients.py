@@ -1,4 +1,4 @@
-from ..Standard_FL.Clients import Client
+from ..StandardFL.Clients import Client
 import torch.distributed as dist
 from ..tools import *
 class HFL_Client(Client):

@@ -1,4 +1,4 @@
-from ..Standard_FL.Server import Server
+from ..StandardFL.Server import Server
 import torch.distributed as dist
 from ..tools import *
 class sync_HFL_server(Server):

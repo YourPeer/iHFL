@@ -1,7 +1,7 @@
 from FLTask import generated_task
 import argparse
 import multiprocessing as mp
-from FLNode import Gateway, HFL_Client, sync_HFL_server, async_HFL_server
+from Frameworks import nebula_server,nebual_gateway,nebula_client
 def get_args():
     parser = argparse.ArgumentParser()
     # System parameters
@@ -17,8 +17,8 @@ def get_args():
     parser.add_argument('--data_type', type=str, default='iid')  # iid,niid,sharding_max
     parser.add_argument('--partition_dir', type=float, default=0.6)
     parser.add_argument('--partition_shards', type=int, default=2)
-    parser.add_argument('--rounds', type=int, default=5)
-    parser.add_argument('--gateway_rounds', type=int, default=3)
+    parser.add_argument('--rounds', type=int, default=20)
+    parser.add_argument('--gateway_rounds', type=int, default=10)
     parser.add_argument('--local_steps', type=int, default=100)
 
     # Training  parameters
@@ -27,13 +27,13 @@ def get_args():
     parser.add_argument('--select_type', type=str, default="random")
     parser.add_argument('--select_ratio', type=float, default=0.5)
     parser.add_argument('--async_alpha', type=float, default=0.9)
-    parser.add_argument('--staleness_func', type=str, default="poly") # constant, poly, hinge
+    parser.add_argument('--staleness_func', type=str, default="constant") # constant, poly, hinge
 
     args = parser.parse_args()
     return args
 
 def generate_topology(clients, gateways):
-    return {i+clients:list(range(i, clients+gateways, gateways))[:-1] for i in range(gateways)}
+    return {i + clients: [list(range(i, clients+gateways, gateways))[j:j+2] for j in range(0, len(list(range(i, clients+gateways, gateways))) - 1, 2)] for i in range(gateways)}
 
 if __name__=="__main__":
     args = get_args()
@@ -48,17 +48,17 @@ if __name__=="__main__":
         # -------------------------start server--------------------------------
         if c == args.clients+args.gateways:
             print("server:%d start"%c)
-            S = async_HFL_server(c, args,distributer,model)
+            S = nebula_server(c, args,distributer,model)
             p = mp.Process(target=S.run, args=())
         # -------------------------start gateways--------------------------------
         elif c in args.topology.keys():
             print("gateway:%d start" % c)
-            g=Gateway(c, args.clients+args.gateways, args, distributer, model)
+            g=nebual_gateway(c, args.clients+args.gateways, args, distributer, model)
             p = mp.Process(target=g.run, args=())
         # -------------------------start clients--------------------------------
         else:
             print("client:%d start" % c)
-            C = HFL_Client(c, args,distributer,model)
+            C = nebula_client(c, args,distributer,model)
             p = mp.Process(target=C.run, args=())
         p.start()
         processes.append(p)

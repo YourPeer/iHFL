@@ -1,7 +1,7 @@
 from FLTask import generated_task
 import argparse
 import multiprocessing as mp
-from FLNode import Client,Server
+from Frameworks import Client,Server
 def get_args():
     parser = argparse.ArgumentParser()
     # System parameters
