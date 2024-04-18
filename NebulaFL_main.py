@@ -18,7 +18,7 @@ def get_args():
     parser.add_argument('--partition_dir', type=float, default=0.6)
     parser.add_argument('--partition_shards', type=int, default=2)
     parser.add_argument('--rounds', type=int, default=20)
-    parser.add_argument('--gateway_rounds', type=int, default=10)
+    parser.add_argument('--gateway_rounds', type=int, default=5)
     parser.add_argument('--local_steps', type=int, default=100)
 
     # Training  parameters
@@ -39,8 +39,8 @@ if __name__=="__main__":
     args = get_args()
     args.size=args.clients+args.gateways+1
     # distributer: dict, key: global,local,data_map,num_classes
-    args.topology = generate_topology(args.clients, args.gateways)
-    print(args.topology)
+    topology=generate_topology(args.clients,args.gateways)
+    print(topology)
     distributer,model=generated_task(args.data_path,args.dataset_name,args.model_name,args.clients,args.batchsize,args.data_type,args.partition_dir,args.partition_shards)
     processes = []
     for c in range(args.clients+args.gateways+1):
@@ -51,7 +51,7 @@ if __name__=="__main__":
             S = nebula_server(c, args,distributer,model)
             p = mp.Process(target=S.run, args=())
         # -------------------------start gateways--------------------------------
-        elif c in args.topology.keys():
+        elif c in topology.keys():
             print("gateway:%d start" % c)
             g=nebual_gateway(c, args.clients+args.gateways, args, distributer, model)
             p = mp.Process(target=g.run, args=())

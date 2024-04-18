@@ -39,8 +39,8 @@ if __name__=="__main__":
     args = get_args()
     args.size=args.clients+args.gateways+1
     # distributer: dict, key: global,local,data_map,num_classes
-    args.topology = generate_topology(args.clients, args.gateways)
-    print(args.topology)
+    topology = generate_topology(args.clients, args.gateways)
+    print(topology)
     distributer,model=generated_task(args.data_path,args.dataset_name,args.model_name,args.clients,args.batchsize,args.data_type,args.partition_dir,args.partition_shards)
     processes = []
     for c in range(args.clients+args.gateways+1):
@@ -48,10 +48,10 @@ if __name__=="__main__":
         # -------------------------start server--------------------------------
         if c == args.clients+args.gateways:
             print("server:%d start"%c)
-            S = async_HFL_server(c, args,distributer,model)
+            S = sync_HFL_server(c, args,distributer,model)
             p = mp.Process(target=S.run, args=())
         # -------------------------start gateways--------------------------------
-        elif c in args.topology.keys():
+        elif c in topology.keys():
             print("gateway:%d start" % c)
             g=Gateway(c, args.clients+args.gateways, args, distributer, model)
             p = mp.Process(target=g.run, args=())

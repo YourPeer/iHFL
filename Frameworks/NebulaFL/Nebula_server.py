@@ -1,3 +1,5 @@
+import pickle
+
 from ..HierFL import sync_HFL_server
 import multiprocessing as mp
 import torch.distributed as dist
@@ -5,11 +7,14 @@ from Frameworks.tools import *
 class nebula_server(sync_HFL_server):
     def __init__(self, c, args, distributer, model):
         super().__init__(c, args, distributer, model)
+        self.args=args
         self.alpha=args.async_alpha
         self.staleness_func=args.staleness_func
+        self.info = extra_info(self.global_loss, self.server_id, self.T)
 
     def run(self):
         self.init_process()
+        self.topology = self.generate_topology(self.args.clients, self.args.gateways)
         lock = mp.Lock()
         # self.borcast_model(self.topology.keys())
         for r in range(self.rounds):
@@ -49,3 +54,18 @@ class nebula_server(sync_HFL_server):
                 return 1
             else:
                 return 1 / (a * (staleness - b) + 1)
+
+    def generate_topology(self, clients, gateways):
+        topology_dict={i + clients: [list(range(i, clients + gateways, gateways))[j:j + 2] for j in
+                              range(0, len(list(range(i, clients + gateways, gateways))) - 1, 2)] for i in
+                range(gateways)}
+        for key in topology_dict:
+            topology_dict[key] = torch.tensor(topology_dict[key])
+        serialized_data = pickle.dumps(topology_dict)
+        data_tensor = torch.ByteTensor(list(serialized_data))
+        data_tensor_size=torch.tensor([len(data_tensor)])
+        for i in topology_dict.keys():
+            dist.send(data_tensor_size,i)
+        for i in topology_dict.keys():
+            dist.send(data_tensor, i)
+        return topology_dict

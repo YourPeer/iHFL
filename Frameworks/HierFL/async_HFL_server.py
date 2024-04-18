@@ -1,3 +1,5 @@
+import pickle
+
 from .sync_HFL_server import sync_HFL_server
 import multiprocessing as mp
 import torch.distributed as dist
@@ -5,11 +7,13 @@ from Frameworks.tools import *
 class async_HFL_server(sync_HFL_server):
     def __init__(self, c, args, distributer, model):
         super().__init__(c, args, distributer, model)
+        self.args=args
         self.alpha=args.async_alpha
         self.staleness_func=args.staleness_func
 
     def run(self):
         self.init_process()
+        self.topology = self.generate_topology(self.args.clients, self.args.gateways)
         lock = mp.Lock()
         self.borcast_model(self.topology.keys())
         for r in range(self.rounds):
@@ -49,3 +53,4 @@ class async_HFL_server(sync_HFL_server):
                 return 1
             else:
                 return 1 / (a * (staleness - b) + 1)
+

@@ -1,3 +1,5 @@
+import pickle
+
 from ..StandardFL.Clients import Client
 import torch.distributed as dist
 from ..tools import *
@@ -11,12 +13,15 @@ def find_sublist_containing_number(data, number):
 class nebula_client(Client):
     def __init__(self, client_id, args, distributer, model):
         super().__init__(client_id, args, distributer, model)
-        self.topology=args.topology
-        self.gateway_id,self.leader_id=[(k,i[0]) for k,v in self.topology.items() for i in v if self.client_id in i][0]
-        self.clients_list=find_sublist_containing_number(self.topology,client_id)
+        self.client_id=client_id
+
+
 
     def run(self):
         self.init_process()
+        self.topology = self.get_topology()
+        self.gateway_id, self.leader_id = [(k, i[0]) for k, v in self.topology.items() for i in v if self.client_id in i][0]
+        self.clients_list = find_sublist_containing_number(self.topology, self.client_id)
         while 1:
             self.local_train()
             self.scheduler.step()
@@ -54,3 +59,11 @@ class nebula_client(Client):
         dist.recv(weights_vec, self.gateway_id)
         for i in self.clients_list[1:]:
             dist.send(weights_vec, i)
+
+    def get_topology(self):
+        buffer_tensor_size = torch.zeros(1, dtype=torch.long)
+        dist.recv(buffer_tensor_size)
+        buffer = torch.zeros(buffer_tensor_size[0], dtype=torch.uint8)
+        dist.recv(buffer)
+        topology = pickle.loads(buffer.numpy().tobytes())
+        return topology

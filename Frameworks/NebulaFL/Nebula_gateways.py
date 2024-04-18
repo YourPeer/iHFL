@@ -1,3 +1,5 @@
+import pickle
+
 from ..StandardFL.Server import Server
 import torch.distributed as dist
 import sys
@@ -8,16 +10,12 @@ class nebual_gateway(Server):
         super().__init__(server_id,args, distributer, model)
         self.gateway_id = gateway_id
         self.server_id = server_id
-        self.topology=args.topology
-        self.leaders_num=len(args.topology[self.gateway_id])
         self.gateway_rounds=args.gateway_rounds
         # send extra info
         self.alpha=args.async_alpha
         self.staleness_func = args.staleness_func
         self.T = 0
         self.info = extra_info(self.global_loss, self.gateway_id, self.T)
-        self.leaders_list = [l[0] for l in self.topology[self.gateway_id]]
-
 
     def init_process(self):
         setup_seed(2024)
@@ -27,6 +25,9 @@ class nebual_gateway(Server):
 
     def run(self):
         self.init_process()
+        self.topology = self.get_topology()
+        self.leaders_num = len(self.topology[self.gateway_id])
+        self.leaders_list = [l[0] for l in self.topology[self.gateway_id]]
         lock = mp.Lock()
 
         for r in range(self.rounds):
@@ -109,3 +110,15 @@ class nebual_gateway(Server):
                 return 1
             else:
                 return 1 / (a * (staleness - b) + 1)
+
+    def get_topology(self):
+        data_tensor_size = torch.zeros(1, dtype=torch.long)
+        dist.recv(data_tensor_size)
+        buffer = torch.zeros(data_tensor_size[0], dtype=torch.uint8)
+        dist.recv(buffer)
+        topology = pickle.loads(buffer.numpy().tobytes())
+        for i in torch.flatten(topology[self.gateway_id]):
+            dist.send(data_tensor_size,i)
+        for i in torch.flatten(topology[self.gateway_id]):
+            dist.send(buffer,i)
+        return topology

@@ -1,3 +1,5 @@
+import pickle
+
 from ..StandardFL.Server import Server
 import torch.distributed as dist
 import sys
@@ -7,8 +9,7 @@ class Gateway(Server):
         super().__init__(server_id,args, distributer, model)
         self.gateway_id = gateway_id
         self.server_id = server_id
-        self.topology=args.topology
-        self.clients_list = self.topology[self.gateway_id]
+
         self.gateway_rounds=args.gateway_rounds
         # send extra info
         self.T = 0
@@ -22,6 +23,8 @@ class Gateway(Server):
 
     def run(self):
         self.init_process()
+        self.topology = self.get_topology()
+        self.clients_list = self.topology[self.gateway_id]
         for r in range(self.rounds):
             self.download_global_model(self.server_id)
             for gr in range(self.gateway_rounds):
@@ -87,3 +90,15 @@ class Gateway(Server):
         for i, c in zip(self.clients_list,sampled_clients):
             if c == 1: # be selected
                 dist.send(global_weight_vec, i)
+
+    def get_topology(self):
+        data_tensor_size = torch.zeros(1, dtype=torch.long)
+        dist.recv(data_tensor_size)
+        buffer = torch.zeros(data_tensor_size[0], dtype=torch.uint8)
+        dist.recv(buffer)
+        topology = pickle.loads(buffer.numpy().tobytes())
+        for i in torch.flatten(topology[self.gateway_id]):
+            dist.send(data_tensor_size,i)
+        for i in torch.flatten(topology[self.gateway_id]):
+            dist.send(buffer,i)
+        return topology
