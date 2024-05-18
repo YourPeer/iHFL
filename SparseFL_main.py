@@ -1,7 +1,7 @@
 from FLTask import generated_task
 import argparse
 import multiprocessing as mp
-from Frameworks import Client,Server
+from Frameworks import Sp_server,Sp_client
 import warnings
 warnings.filterwarnings("ignore")
 def get_args():
@@ -28,6 +28,14 @@ def get_args():
     parser.add_argument('--select_type', type=str, default="random")
     parser.add_argument('--select_ratio', type=float, default=1)
     parser.add_argument('--async_alpha', type=float, default=0.6)
+
+    # Sparse parameters
+    parser.add_argument('--sparse', type=bool, default=True, help='Enable sparse mode. Default: True.')
+    parser.add_argument('--fix', type=bool, default=True,
+                        help='Fix sparse connectivity during training. Default: True.')
+    parser.add_argument('--importanace_mode', type=str, default='weight',
+                        help='sparse initialization')  # uniform/uniform_plus/ERK/ERK_plus/ER/snip/GraSP
+    parser.add_argument('--pruning_ratio', type=float, default=0.5, help='The density of the overall sparse network.')
     args = parser.parse_args()
     return args
 
@@ -41,11 +49,11 @@ if __name__=="__main__":
     for c in range(args.clients+1):
         if c == args.clients:
             # -------------------------start server--------------------------------
-            S = Server(c, args,distributer,model)
+            S = Sp_server(c, args,distributer,model)
             p = mp.Process(target=S.run, args=())
         else:
             # -------------------------start client--------------------------------
-            C = Client(c, args,distributer,model)
+            C = Sp_client(c, args,distributer,model)
             p = mp.Process(target=C.run, args=())
         p.start()
         processes.append(p)

@@ -28,7 +28,6 @@ def get_args():
     parser.add_argument('--select_ratio', type=float, default=0.5)
     parser.add_argument('--async_alpha', type=float, default=0.9)
     parser.add_argument('--staleness_func', type=str, default="constant") # constant, poly, hinge
-
     args = parser.parse_args()
     return args
 

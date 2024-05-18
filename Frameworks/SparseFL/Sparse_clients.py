@@ -7,7 +7,7 @@ import torch.distributed as dist
 from ..tools import *
 import os
 from FLTools import Masking,CosineDecay
-class Client(object):
+class Sp_client(object):
     def __init__(self, client_id, args, distributer, model):
         self.args=args
         # System parameters
@@ -35,6 +35,12 @@ class Client(object):
         self.optimizer = torch.optim.SGD(self.model.parameters(),lr=self.lr,momentum=0.9)
         self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer,[int(self.rounds * 0.6), int(self.rounds * 0.9)],gamma=0.1)
 
+        # sparse parameters
+        self.sparse = args.sparse
+        self.fix = args.fix
+        self.importanace_mode = args.importanace_mode
+        self.pruning_ratio = args.pruning_ratio
+
         # send extra info
         self.T = 0
         self.info = extra_info(self.train_loss, self.client_id, self.T)
@@ -56,9 +62,19 @@ class Client(object):
         for round in range(self.rounds):
             sampled_clients=self.download_info(self.clients,self.server_id) # selected device
             if sampled_clients[self.client_id]==1: # selected device perform training
-                self.download_global_model(self.server_id)
-                self.local_train()
-                self.aggregation()
+                if self.sparse:
+                    self.download_submodel(self.server_id)
+                    self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.9)
+                    # if dist.get_rank()==0:
+                    #     for param in self.model.parameters():
+                    #         print(param.data)
+                    self.local_train()
+                    self.sparse_aggregation()
+                else:
+                    self.download_global_model(self.server_id)
+                    self.local_train()
+                    self.aggregation()
+
                 self.info = extra_info(self.train_loss, self.client_id, self.T)
             self.T+=1
             if round==0 or (round+1) % self.save_model_circle_round ==0 and self.client_id in [0,1]:
@@ -75,10 +91,20 @@ class Client(object):
         dist.recv(sampled_clients,server_id)
         return sampled_clients
 
+    def sparse_aggregation(self):
+        model_data = {
+            'model_state_dict': self.model,
+            # 'model_prune_mask': sub_mask,
+        }
+        buffer = pickle.dumps(model_data)
+        buffer_tensor = torch.ByteTensor(list(buffer))
+        dist.send(torch.tensor(len(buffer)), self.server_id)  # Send buffer size first
+        dist.send(buffer_tensor, self.server_id)  # Then send buffer data
 
     def aggregation(self):
         weights_vec, info_len = pack(self.model, self.info)
         dist.send(weights_vec, self.server_id)
+
 
     def local_train(self):
         self.model.cuda()
@@ -133,6 +159,21 @@ class Client(object):
         test_loss=test_loss / (batch_idx + 1)
         test_acc=100. * correct / total
         return test_loss,test_acc
+
+    def download_submodel(self,server_id):
+        buffer_size = torch.tensor(0)
+        dist.recv(buffer_size, src=server_id)  # Receive buffer size first
+        buffer_tensor = torch.ByteTensor(buffer_size.item())
+        dist.recv(buffer_tensor, src=server_id)  # Then receive buffer data
+        model_data = pickle.loads(bytes(buffer_tensor.tolist()))
+        self.model = model_data['model_state_dict']
+
+        # sub_mask = model_data['model_prune_mask']
+        # example_inputs, _ = next(iter(self.test_loader))
+        # pruner = flacos_pruner(self.model, self.pruning_ratio, example_inputs, iterative_steps=1, feature_output=1000,
+        #                        importanace_mode="client")
+        # pruner.prune(self.pruning_ratio,sub_mask)
+        # self.model.load_state_dict(sub_model)
 
 
 
