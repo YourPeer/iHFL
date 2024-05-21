@@ -1,7 +1,7 @@
 from FLTask import generated_task
 import argparse
 import multiprocessing as mp
-from Frameworks import Sp_server,Sp_client
+from Frameworks import Sp_client,Sp_server, PSServer, PSClient
 import warnings
 warnings.filterwarnings("ignore")
 def get_args():
@@ -14,27 +14,27 @@ def get_args():
     # Task parameters
     parser.add_argument('--data_path', type=str, default='../data/')
     parser.add_argument('--dataset_name', type=str, default='cifar10')
-    parser.add_argument('--model_name', type=str, default='cifarcnn')
+    parser.add_argument('--model_name', type=str, default='vgg11') #vgg11,cifarcnn,resnet9
     parser.add_argument('--data_type', type=str, default='niid')  # iid,niid,sharding_max
-    parser.add_argument('--partition_dir', type=float, default=0.6)
+    parser.add_argument('--partition_dir', type=float, default=0.3)
     parser.add_argument('--partition_shards', type=int, default=2)
     parser.add_argument('--rounds', type=int, default=100)
-    parser.add_argument('--local_steps', type=int, default=100)
+    parser.add_argument('--local_steps', type=int, default=256)
 
 
     # Training  parameters
     parser.add_argument('--batchsize', type=int, default=64)
-    parser.add_argument('--learning_rate', type=float, default=0.01)
+    parser.add_argument('--learning_rate', type=float, default=0.02)
     parser.add_argument('--select_type', type=str, default="random")
     parser.add_argument('--select_ratio', type=float, default=1)
     parser.add_argument('--async_alpha', type=float, default=0.6)
 
     # Sparse parameters
     parser.add_argument('--sparse', type=bool, default=True, help='Enable sparse mode. Default: True.')
-    parser.add_argument('--fix', type=bool, default=True,
+    parser.add_argument('--fix', type=bool, default=False,
                         help='Fix sparse connectivity during training. Default: True.')
-    parser.add_argument('--importanace_mode', type=str, default='weight',
-                        help='sparse initialization')  # uniform/uniform_plus/ERK/ERK_plus/ER/snip/GraSP
+    parser.add_argument('--importanace_mode', type=str, default='random',
+                        help='sparse initialization')
     parser.add_argument('--pruning_ratio', type=float, default=0.5, help='The density of the overall sparse network.')
     args = parser.parse_args()
     return args
@@ -49,11 +49,11 @@ if __name__=="__main__":
     for c in range(args.clients+1):
         if c == args.clients:
             # -------------------------start server--------------------------------
-            S = Sp_server(c, args,distributer,model)
+            S = PSServer(c, args,distributer,model)
             p = mp.Process(target=S.run, args=())
         else:
             # -------------------------start client--------------------------------
-            C = Sp_client(c, args,distributer,model)
+            C = PSClient(c, args,distributer,model)
             p = mp.Process(target=C.run, args=())
         p.start()
         processes.append(p)

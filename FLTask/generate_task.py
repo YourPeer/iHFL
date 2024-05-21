@@ -8,6 +8,8 @@ MODELS = {
     "mnistcnn": FedAvgNetMNIST,
     "cifarcnn": FedAvgNetCIFAR,
     "tinycnn": FedAvgNetTiny,
+    "vgg11": vgg11,
+    "resnet9":ResNet9
 }
 
 NUM_CLASSES = {

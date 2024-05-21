@@ -58,6 +58,7 @@ class Client(object):
             if sampled_clients[self.client_id]==1: # selected device perform training
                 self.download_global_model(self.server_id)
                 self.local_train()
+
                 self.aggregation()
                 self.info = extra_info(self.train_loss, self.client_id, self.T)
             self.T+=1
@@ -133,6 +134,3 @@ class Client(object):
         test_loss=test_loss / (batch_idx + 1)
         test_acc=100. * correct / total
         return test_loss,test_acc
-
-
-

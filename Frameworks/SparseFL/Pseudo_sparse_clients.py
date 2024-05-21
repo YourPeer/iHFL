@@ -6,9 +6,8 @@ import torch_pruning as tp
 import torch.distributed as dist
 from ..tools import *
 import os
-from tqdm import tqdm
 from FLTools import Masking,CosineDecay
-class Sp_client(object):
+class PSClient(object):
     def __init__(self, client_id, args, distributer, model):
         self.args=args
         # System parameters
@@ -36,17 +35,9 @@ class Sp_client(object):
         self.optimizer = torch.optim.SGD(self.model.parameters(),lr=self.lr,momentum=0.9)
         self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer,[int(self.rounds * 0.6), int(self.rounds * 0.9)],gamma=0.1)
 
-        # sparse parameters
-        self.sparse = args.sparse
-        self.fix = args.fix
-        self.importanace_mode = args.importanace_mode
-        self.pruning_ratio = args.pruning_ratio
-
         # send extra info
         self.T = 0
         self.info = extra_info(self.train_loss, self.client_id, self.T)
-
-
 
     def init_process(self):
         setup_seed(2024)
@@ -57,45 +48,33 @@ class Sp_client(object):
 
     def run(self):
         self.init_process()
-        # self.model.cuda()
-
         for round in range(self.rounds):
             sampled_clients=self.download_info(self.clients,self.server_id) # selected device
             if sampled_clients[self.client_id]==1: # selected device perform training
-                self.download_submodel(self.server_id)
-                self.sparse_local_train()
-                print(dist.get_rank())
-                self.sparse_aggregation()
+                self.download_global_model(self.server_id)
+                self.local_train()
+                self.aggregation()
                 self.info = extra_info(self.train_loss, self.client_id, self.T)
             self.T+=1
             if round==0 or (round+1) % self.save_model_circle_round ==0 and self.client_id in [0,1]:
                 torch.save(self.model, './FLSaveModel/'+str(self.client_id)+'_local_model_'+str(round)+'_round.pth')
 
+    def download_global_model(self,server_id):
+        weights_vec, info_len = pack(self.model, self.info)
+        dist.recv(weights_vec,server_id)
+        weights, info = unpack(weights_vec, info_len)
+        load_weights(self.model, weights)
+
     def download_info(self,clients,server_id):
         sampled_clients = torch.zeros(clients, dtype=int)
         dist.recv(sampled_clients,server_id)
         return sampled_clients
-    def download_submodel(self,server_id):
-        buffer_size = torch.tensor(0)
-        dist.recv(buffer_size, src=server_id)  # Receive buffer size first
-        buffer_tensor = torch.ByteTensor(buffer_size.item())
-        dist.recv(buffer_tensor, src=server_id)  # Then receive buffer data
-        model_data = pickle.loads(bytes(buffer_tensor.tolist()))
-        self.model = model_data['model_state_dict']
 
-    def sparse_aggregation(self):
-        model_data = {
-            'model_state_dict': self.model,
-            # 'model_prune_mask': sub_mask,
-        }
-        buffer = pickle.dumps(model_data)
-        buffer_tensor = torch.ByteTensor(list(buffer))
-        dist.send(torch.tensor(len(buffer)), self.server_id)  # Send buffer size first
-        dist.send(buffer_tensor, self.server_id)  # Then send buffer data
+    def aggregation(self):
+        weights_vec, info_len = pack(self.model, self.info)
+        dist.send(weights_vec, self.server_id)
 
-
-    def sparse_local_train(self):
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.9) # importance! Different submodel.
+    def local_train(self):
         self.model.cuda()
         self.model.train()
         self.train_loss=0.0
@@ -103,7 +82,7 @@ class Sp_client(object):
             (data, targets) = self.get_batch_data()
             self.optimizer.zero_grad()
             # forward pass
-            data, targets = data.cuda(non_blocking=True), targets.cuda(non_blocking=True)
+            data, targets = data.cuda(), targets.cuda()
             output = self.model(data)
             loss = self.criterion(output, targets)
             self.train_loss+=loss.item()
@@ -148,9 +127,3 @@ class Sp_client(object):
         test_loss=test_loss / (batch_idx + 1)
         test_acc=100. * correct / total
         return test_loss,test_acc
-
-
-
-
-
-

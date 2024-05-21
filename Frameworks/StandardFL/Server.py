@@ -88,7 +88,6 @@ class Server(object):
             self.train_loss_list[i]=info[0].item() if info[0].item()!=0.0 else self.train_loss_list[i]
             # global_weight+=weights*data_ratio[i]
             global_weight+=weights/self.clients
-        print(global_weight)
         load_weights(self.model, global_weight)
 
 
@@ -109,7 +108,6 @@ class Server(object):
                 _, predicted = outputs.max(1)
                 total += targets.size(0)
                 correct += predicted.eq(targets).sum().item()
-        self.model.train()
         self.model.cpu()
         test_loss = test_loss / (batch_idx + 1)
         test_acc = 100. * correct / total
@@ -125,9 +123,3 @@ class Server(object):
             sampled_clients[selected_clients]=1
             data_ratio = [ratio/np.sum(self.data_ratio[selected_clients]) for ratio in self.data_ratio]
         return sampled_clients,data_ratio
-
-
-
-
-
-

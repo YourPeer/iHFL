@@ -9,14 +9,14 @@ def get_args():
     # System parameters
     parser.add_argument('--clients', type=int, default=10)
     parser.add_argument('--gpu_num', type=int, default=4)
-    parser.add_argument('--port', type=int, default=2000)
+    parser.add_argument('--port', type=int, default=6060)
 
     # Task parameters
     parser.add_argument('--data_path', type=str, default='../data/')
     parser.add_argument('--dataset_name', type=str, default='cifar10')
-    parser.add_argument('--model_name', type=str, default='cifarcnn')
-    parser.add_argument('--data_type', type=str, default='niid')  # iid,niid,sharding_max
-    parser.add_argument('--partition_dir', type=float, default=0.6)
+    parser.add_argument('--model_name', type=str, default='vgg11')
+    parser.add_argument('--data_type', type=str, default='iid')  # iid,niid,sharding_max
+    parser.add_argument('--partition_dir', type=float, default=0.3)
     parser.add_argument('--partition_shards', type=int, default=2)
     parser.add_argument('--rounds', type=int, default=100)
     parser.add_argument('--local_steps', type=int, default=100)

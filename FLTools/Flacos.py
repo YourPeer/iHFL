@@ -3,12 +3,50 @@ import copy
 import torch
 import torch.nn as nn
 import torch_pruning as tp
-from torchvision.models import vgg11,resnet50
-class MyRandomImportance(tp.importance.Importance):
+
+
+class FedAvgNetCIFAR(torch.nn.Module):
+    def __init__(self, num_classes=10):
+        super(FedAvgNetCIFAR, self).__init__()
+        self.conv2d_1 = torch.nn.Conv2d(3, 32, kernel_size=5, padding=2,bias=False)
+        self.max_pooling = nn.MaxPool2d(2, stride=2)
+        self.conv2d_2 = torch.nn.Conv2d(32, 64, kernel_size=5, padding=2,bias=False)
+        self.flatten = nn.Flatten()
+        self.linear_1 = nn.Linear(4096, 512,bias=False)
+        self.classifier = nn.Linear(512, num_classes,bias=False)
+        self.relu1 = nn.ReLU()
+        self.relu2 = nn.ReLU()
+        self.relu3 = nn.ReLU()
+        self.relu4 = nn.ReLU()
+
+
+
+    def forward(self, x, get_features=False):
+        x = self.conv2d_1(x)
+        x = self.relu1(x)
+
+        x = self.max_pooling(x)
+        x = self.conv2d_2(x)
+        x = self.relu2(x)
+
+        x = self.max_pooling(x)
+        x = self.flatten(x)
+        z = self.relu3(self.linear_1(x))
+        y = self.classifier(z)
+        x = self.relu4(y)
+
+        if get_features:
+            return y, z
+
+        else:
+            return y
+
+
+class RandomImportance(tp.importance.Importance):
     def __init__(self):
-        super(MyRandomImportance, self).__init__()
+        super(RandomImportance, self).__init__()
         self.group_imp_list = []
-        #torch.manual_seed(42)
+        torch.manual_seed(42)
 
     def __call__(self, group, **kwargs):
         group_imp = []
@@ -18,14 +56,17 @@ class MyRandomImportance(tp.importance.Importance):
 
             if isinstance(layer, nn.Conv2d) and prune_fn == tp.prune_conv_out_channels:
                 local_norm = torch.rand(len(idxs))
+                print(len(idxs))
                 group_imp.append(local_norm)
 
             elif isinstance(layer, nn.Linear) and prune_fn == tp.prune_linear_out_channels:
                 local_norm = torch.rand(len(idxs))
+                print(len(idxs))
                 group_imp.append(local_norm)
 
             elif isinstance(layer, nn.BatchNorm2d) and prune_fn == tp.prune_batchnorm_out_channels:
                 local_norm = torch.rand(len(idxs))
+
                 group_imp.append(local_norm)
 
         if len(group_imp) == 0:
@@ -38,9 +79,9 @@ class MyRandomImportance(tp.importance.Importance):
     def get_group_imp(self):
         return self.group_imp_list
 
-class MyMagnitudeImportance(tp.importance.Importance):
+class MagnitudeImportance(tp.importance.Importance):
     def __init__(self):
-        super(MyRandomImportance, self).__init__()
+        super(RandomImportance, self).__init__()
         self.group_imp_list = []
     def __call__(self, group, **kwargs):
         group_imp = []
@@ -98,9 +139,9 @@ class flacos_pruner(object):
         self.pruning_ratio=pruning_ratio
         if self.imp is None or not fix:
             if self.importance_mode == "random":
-                self.imp = MyRandomImportance()
+                self.imp = RandomImportance()
             elif self.importance_mode == "weight":
-                self.imp = MyMagnitudeImportance()
+                self.imp = MagnitudeImportance()
             elif self.importance_mode == "client":
                 self.imp = clientMagnitudeImportance(mask)
         self.group_imp_list=self.imp.get_group_imp()
@@ -136,111 +177,21 @@ class flacos_pruner(object):
         return mask[::-1]
 
 
-def restore_model(full_model, pruned_model, mask_list, feature_output):
-
-    mask_index = 0
-    indices_old = None
-    fc_indices_old=None
-    for name, module in full_model.named_modules():
-        if isinstance(module, (nn.Conv2d, nn.Linear)):
-            if isinstance(module, nn.Linear) and module.out_features == feature_output:
-                continue
-
-            pruned_module = dict(pruned_model.named_modules())[name]
-
-            mask = mask_list[mask_index].bool()
-
-            indices = torch.where(mask)[0]
-            indices, _ = torch.sort(indices)
-            print(indices)
-
-            with torch.no_grad():
-                if isinstance(module, nn.Conv2d):
-                    new_weight = torch.zeros_like(module.weight)
-                    #new_bias = torch.zeros_like(module.bias)
-                    if indices_old is None:
-                        new_weight[indices,:, :, :] = pruned_module.weight[:, :, :, :]
-                        #new_bias[indices] = pruned_module.bias
-                    else:
-                        j=0
-                        for i in range(indices.size(0)):
-                            new_weight[indices[i], indices_old, :, :] = pruned_module.weight[j, :, :, :]
-                            #new_bias[indices[i]] = pruned_module.bias[j]
-                            j+=1
-                        # new_weight[indices, indices_old, :, :] = pruned_module.weight[:, :, :, :]
-                    module.weight.copy_(new_weight)
-                    #module.bias.copy_(new_bias)
-                    indices_old = torch.clone(indices)
-
-                elif isinstance(module, nn.Linear):
-
-                    new_weight = torch.zeros_like(module.weight)
-
-                    if fc_indices_old is None:
-                        m, n = pruned_module.weight.size(0), new_weight.size(1)
-                        s = m // indices_old.size(0) # jiangge
-                        for i, j in enumerate(indices_old):
-                            new_weight[indices, j * s:(j + 1) * s] = pruned_module.weight[:, i * s:(i + 1) * s]
-                    else:
-                        j = 0
-                        for i in range(indices.size(0)):
-                            new_weight[indices[i], fc_indices_old] = pruned_module.weight[j, :]
-                            j += 1
-                        # new_weight[indices, indices_old, :, :] = pruned_module.weight[:, :, :, :]
-                    module.weight.copy_(new_weight)
-                    fc_indices_old = torch.clone(indices)
-
-            mask_index += 1
-
-#
-# model = vgg11(pretrained=False,num_classes=10)
-# full_model = copy.deepcopy(model)
-# for param in full_model.parameters():
-#     print(param.data)
-#
+# model=FedAvgNetCIFAR()
 # print(model)
-# example_inputs = torch.randn(1, 3, 32, 32)
-# pruner=flacos_pruner(model,0.5,example_inputs,iterative_steps=1,feature_output=10,importanace_mode="weight")
-# pruner.prune(0.5)
-# print(model)
-# mask_list=pruner.get_remain_channel_index()[::-1]
-# i=0
-#
-#
-#
-# feature_output = 10
-# restore_model(full_model, model, mask_list, feature_output)
-# for param in full_model.parameters():
-#     print(param.data)
-# 验证恢复后的模型
-# i = 0
-# for name, module in full_model.named_modules():
-#     if isinstance(module, (nn.Conv2d, nn.Linear)) and not (isinstance(module, nn.Linear) and module.out_features == feature_output):
-#         print(f"Layer {name} - {module}")
-#         print(f"Parameter Size: {module.weight}")
-#         i += 1
+# example_inputs=torch.rand(1,3,32,32)
+# pruner = flacos_pruner(model, 0.5, example_inputs, iterative_steps=1,
+#                                    feature_output=10,
+#                                    importanace_mode="random")
+# pruner.prune()
+# state_dict = tp.state_dict(model)
+# for param in model.parameters():
+#     print(param.size())
+#     break
+# print(state_dict['full_state_dict'])
+# new_model=FedAvgNetCIFAR().eval()
+# tp.load_state_dict(new_model, state_dict=state_dict)
+# for param in new_model.parameters():
+#     print(param.size())
+#     break
 
-
-# print(model)
-# # X=torch.rand(1,3,32,32)
-# # y=model(X)
-#
-# model = vgg11(pretrained=False)
-# example_inputs = torch.randn(1, 3, 32, 32)
-# imp=clientMagnitudeImportance(mask)
-# ignored_layers = []
-# for m in model.modules():
-#     if isinstance(m, torch.nn.Linear) and m.out_features == 1000:
-#         ignored_layers.append(m)  # DO NOT prune the final classifier!
-#
-# pruner = tp.pruner.MetaPruner(
-#     model,
-#     example_inputs,
-#     importance=imp,
-#     iterative_steps=1,
-#     pruning_ratio=0.5,
-#     pruning_ratio_dict=None,
-#     ignored_layers=ignored_layers,
-# )
-# pruner.step()
-# print(model)
